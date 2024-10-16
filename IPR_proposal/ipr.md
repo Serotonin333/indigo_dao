@@ -13,7 +13,7 @@ Perhaps the most obvious way to directly alleviate some of the short selling pre
 While the majority of funding would come from revenue from interest on CDPs, an IPR could partially fund itself by buying iAssets when the market rate is low and selling them back when the rate is high. The DAO would also have the option to use assets within the IPR for other functions...
 
 ## A Better Allocation of Funds
-When examining the flow of INDY through the ecosystem, it becomes apparent that management of funds is currently sub-optimal (see Figure 1). On-chain analysis shows that roughly 90% (cite) of the INDY provided to stability pools (SP) ends up being sold shortly after on the market. The 30% of revenue going towards INDY buybacks then only partially counteracts the sell pressure of SP stakers. INDY stakers, on the other hand, tend to hold 80% of their INDY staking rewards. One way to interpret this is to say that stakers want to hold more of the asset that they are staking.
+When examining the flow of INDY through the ecosystem, it becomes apparent that management of funds is currently sub-optimal (see Figure 1). On-chain analysis shows that stability pools (SP) stakers, as a group, sell roughly 50% of the INDY rewards they earn shortly after claiming. The 30% of revenue going towards INDY buybacks then only partially counteracts the sell pressure of SP stakers. INDY stakers, on the other hand, tend to hold 80% of their INDY staking rewards. One way to interpret this is to say that stakers want to hold more of the asset that they are staking.
 
 ![Current](./images/current_structure.png "Current Structure")
 *Figure 1: Flow of INDY through the ecosystem under the current structure.*
