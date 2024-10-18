@@ -11,7 +11,7 @@ class Value:
 
     @property
     def value_ada(self):
-        return self.amount / self.asset_price_ada
+        return self.amount * self.asset_price_ada
 
     @property
     def asset_inv_price_ada(self) -> float:
@@ -22,7 +22,7 @@ class Value:
             total = self.amount + val.amount
             return Value(amount=total,
                          asset=self.asset, 
-                         asset_price_ada=(self.asset_price_ada*self.amount + val.asset_price_ada*val.amount)/total)
+                         asset_price_ada=(self.value_ada - val.value_ada)/total)
         else:
             total = self.value_ada + val.value_ada
             return Value(amount=total,
@@ -34,7 +34,7 @@ class Value:
             total = self.amount - val.amount
             return Value(amount=total,
                          asset=self.asset, 
-                         asset_price_ada=(self.asset_price_ada*self.amount - val.asset_price_ada*val.amount)/total)
+                         asset_price_ada=(self.value_ada - val.value_ada)/total)
         else:
             total = self.value_ada - val.value_ada
             return Value(amount=total,
@@ -85,6 +85,8 @@ if __name__=="__main__":
     sp = Body(inflows=[sp_indy_emissions_pe],
             retention_ratios ={'indy': 0.4, 'iUSD': 0.8})
     
+    print(sp_indy_emissions_pe)
+    print(sp_indy_emissions_pe.value_ada)
     print(sp.outflows)
     print(sp.increase)
 
