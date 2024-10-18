@@ -43,7 +43,7 @@ class Value:
 
     def value_in(self, asset):
         if type(self) == type(asset):
-            amount = (self.value_ada + asset.value_ada) * asset.asset_price_ada
+            amount = self.value_ada / asset.asset_price_ada
             return Value(amount=amount,
                          asset=asset.asset,
                          asset_price_ada=asset.asset_price_ada)
@@ -83,10 +83,17 @@ if __name__=="__main__":
                                 asset_price_ada=indy_price_ada)
 
     sp = Body(inflows=[sp_indy_emissions_pe],
-            retention_ratios ={'indy': 0.4, 'iUSD': 0.8})
+            retention_ratios ={'indy': 0.55, 'iUSD': 0.8})
     
+    ada = Value(amount=100,
+                asset='ada',
+                asset_price_ada=1.0)
+
+    iUSD = Value(amount=100,
+                asset='iUSD',
+                asset_price_ada=2.52)
     print(sp_indy_emissions_pe)
-    print(sp_indy_emissions_pe.value_ada)
+    print(sp_indy_emissions_pe.value_in(iUSD))
     print(sp.outflows)
     print(sp.increase)
 
