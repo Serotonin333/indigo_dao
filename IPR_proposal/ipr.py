@@ -94,15 +94,7 @@ class Body:
 
 
 def current_scenario():
-
-    return sp, dao_treasury
-if __name__=="__main__":
-    # Current Scenario
     indy_price_ada = 1.9
-    iUSD_price_ada = 2.5
-    sp_indy_sell_ratio = 0.5
-    sp_iasset_sell_ratio = 0.2
-    sp_indy_emissions_pe = 18636.36
     sp_retention_ratios = {'indy': 0.55, 'iUSD': 0.8}
     dao_treasury_retention_ratios = {'indy':1.0, 'ada': 1.0, "iUSD": 0.0}
     sp_indy_emissions_pe = Value(amount=18636.36,
@@ -112,14 +104,6 @@ if __name__=="__main__":
     sp = Body(inflows=[sp_indy_emissions_pe],
             retention_ratios = sp_retention_ratios,
             name="Stability Pool")
-    
-    ada = Value(amount=100,
-                asset='ada',
-                asset_price_ada=1.0)
-
-    iUSD = Value(amount=100,
-                asset='iUSD',
-                asset_price_ada=2.52)
     
     dao_interest_ada_pm = 500_000 
     dao_interest_ada_pe = dao_interest_ada_pm / 6
@@ -131,10 +115,21 @@ if __name__=="__main__":
 
     print(sp)
     print(dao_treasury)
+    return sp, dao_treasury
 
-    # Proposed Scenario
+def proposed_scenario():
+    indy_price_ada = 1.9
+    iUSD_price_ada = 2.5
+    sp_retention_ratios = {'indy': 0.55, 'iUSD': 0.8}
+    sp_indy_emissions_pe = 18636.36
     ipr_funding_perc = 0.3
+    dao_interest_ada_pm = 500_000 
+    dao_interest_ada_pe = dao_interest_ada_pm / 6
     ipr_retention_ratios = {'indy': 1.0, 'ada': 1.0, 'iUSD': 0.0}
+    dao_treasury_retention_ratios = {'indy':1.0, 'ada': 1.0, "iUSD": 0.0}
+    sp_indy_emissions_pe = Value(amount=18636.36,
+                                asset='indy',
+                                asset_price_ada=indy_price_ada)
     max_ipr_purchase_pe_ada = sp_indy_emissions_pe.value_ada
     ipr_budget_pe_ada = ipr_funding_perc * dao_interest_ada_pe
     ipr_iUSD_buy_pe_ada = min(ipr_budget_pe_ada, max_ipr_purchase_pe_ada)
@@ -159,3 +154,11 @@ if __name__=="__main__":
     print(ipr)
     print(sp)
     print(dao_treasury)    
+    return sp, dao_treasury
+
+if __name__=="__main__":
+    # Current Scenario
+    current_scenario()
+
+    # Proposed Scenario
+    proposed_scenario()
