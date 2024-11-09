@@ -1,6 +1,6 @@
 # Proposal to Enact an Indigo Peg Reserve
 
-This purpose of this discussion is to examine the interest and feasibility of using CDP interest to fund an Indigo Peg Reserve (IPR). The IPR would be a reserve of funds that could be used to exchange on the market in a fashion that helps to maintain iAsset peg.
+This proposal is to restructure the Indigo Protocol's interest from collateralized debt positions (CDPs) to fund and enact an Indigo Peg Reserve (IPR). The IPR is a reserve of funds that market participants can interact with via the Indigo Protocol app for the exchange of assets in a fashion that helps to maintain iAsset peg.
 
 Funding changes include
 * 30% CDP interest payments going forward placed towards funding the IPR
@@ -14,8 +14,11 @@ OPEX - Operational Expenses\
 PWG - Protocol Working Group\
 UI - User Interface\
 VCA - Verified Collateral Asset (asset accepted as collateral backing for iAsset, currently ADA)\
+
 ## Background
-#TODO
+The [Indigo Protocol v2.1](https://app.indigoprotocol.io/governance/polls/63) upgrade introduced algorithmic interest rates for CDPs. Despite this advancement, it has proven difficult for iAssets to maintain their peg price on markets. This is primarily due to the reliance on incentives or disincentives to gradually steer the market price (such as interest rates) rather than a "hard" peg mechanism (such as redemptions) to maintain price. While the protocol does have a redemption mechanism, it is still "voluntary" in the sense that CDP owners may optionally provide collateral beyond the minimum collateralization ratio (MCR) to prevent themselves from being redeemed against.
+
+As such, an additional "hard" mechanism must be introduced if iAssets are expected to maintain their peg valuation on open markets. This mechanism, ideally, would remain in effect all of the time (unlike redemptions, which are limited instances  in which there are CDPs within the redemption zone). This proposal support the creation and funding of an IPR to provide immediate buy/sell pressure on the market, as needed to maintain iAsset peg. Of course, its effectiveness is limited to the resources available to it, but over time as the IPR grows, it will become more capable of abosorbing short term market fluctuations that would cause deviations in iAsset price from their pegged value.
 
 ## 30% ADA on INDY Buybacks for INDY stakers
 INDY buybacks have been functioning well. Since buybacks first started on X, INDY is currently up more than 200%. The Protocol Working Group (PWG) believes that this successful strategy should be continued to sustain buy pressure on the INDY token. We wish to route all INDY buybacks to INDY holders. The DAO has a surplus of INDY and, at the moment, no diversification into other assets. Furthermore, INDY stakers are seen as prime candidates to receive these INDY buybacks as data suggests that they have a 90% retention rate of their INDY rewards. INDY rewards also benefit INDY stakers as it allows their rewards to compound, i.e. INDY rewards from staking increase the holders allocation and therefore enable them to receive a larger fraction of the next round's staking rewards. 
@@ -44,13 +47,13 @@ A pair of new parameters will be added for each iAsset that the DAO may vote on.
 * IPR VCA Exchange Fee (3%) - fee a user pays to purchase iAssets to the IPR (sell VCA to the IPR)
 
 ## Parameter Changes
-The current [Phase 1 Treasury Management](https://app.indigoprotocol.io/governance/polls/53) proposal that allocates
+The currently enacted [Proposal #53: Phase One Treasury Management](https://app.indigoprotocol.io/governance/polls/53)  allocates
 
 * 40% Operational Expenses (OPEX)
 * 30% distributed pro rata to INDY stakers
 * 30% INDY buybacks sent to the DAO Treasury
 
-would be revised with the following allocations
+and would be revised with the following allocations
 
 * 40% Operational Expenses (OPEX) - no change
 * 30% INDY buybacks distributed pro rata to INDY stakers
