@@ -8,17 +8,19 @@ Funding changes include
 
 ## Acronyms
 CDP - Collateralized Debt Position\
+CR - Collateralization Ratio\
 DAO - Decentralized Autonomous Organization\
 IPR - Indigo Peg Reserve\
+MCR - Minimum Collateralization Ratio\
 OPEX - Operational Expenses\
 PWG - Protocol Working Group\
 UI - User Interface\
 VCA - Verified Collateral Asset (asset accepted as collateral backing for iAsset, currently ADA)\
 
 ## Background
-The [Indigo Protocol v2.1](https://app.indigoprotocol.io/governance/polls/63) upgrade introduced algorithmic interest rates for CDPs. Despite this advancement, it has proven difficult for iAssets to maintain their peg price on markets. This is primarily due to the reliance on incentives or disincentives to gradually steer the market price (such as interest rates) rather than a "hard" peg mechanism (such as redemptions) to maintain price. While the protocol does have a redemption mechanism, it is still "voluntary" in the sense that CDP owners may optionally provide collateral beyond the minimum collateralization ratio (MCR) to prevent themselves from being redeemed against.
+The [Indigo Protocol v2.1](https://app.indigoprotocol.io/governance/polls/63) upgrade introduced algorithmic interest rates for CDPs. Despite this advancement, it has proven difficult for iAssets to maintain their peg price on the open market. This is primarily due to the reliance on incentives or disincentives to gradually steer the market price (such as interest rates) rather than a "hard" peg mechanism (such as redemptions) to maintain price. While the protocol does have a redemption mechanism, it is still "voluntary" in the sense that CDP owners may optionally provide collateral beyond the minimum collateralization ratio (MCR) to prevent themselves from being redeemed against.
 
-As such, an additional "hard" mechanism must be introduced if iAssets are expected to maintain their peg valuation on open markets. This mechanism, ideally, would remain in effect all of the time (unlike redemptions, which are limited instances  in which there are CDPs within the redemption zone). This proposal support the creation and funding of an IPR to provide immediate buy/sell pressure on the market, as needed to maintain iAsset peg. Of course, its effectiveness is limited to the resources available to it, but over time as the IPR grows, it will become more capable of abosorbing short term market fluctuations that would cause deviations in iAsset price from their pegged value.
+As such, an additional "hard" mechanism must be introduced if iAssets are expected to maintain their peg valuation on open markets. This mechanism, ideally, would remain in effect all of the time (unlike redemptions, which are limited to instances in which there are CDPs within the redemption zone). This proposal support the creation and funding of an IPR to provide immediate buy/sell pressure on the market, as needed to maintain iAsset peg. Of course, its effectiveness is limited to the resources available to it, but over time as the IPR grows, it will become more capable of abosorbing short term market fluctuations that would cause deviations in iAsset price from their pegged value.
 
 ## 30% ADA on INDY Buybacks for INDY stakers
 INDY buybacks have been functioning well. Since buybacks first started on X, INDY is currently up more than 200%. The Protocol Working Group (PWG) believes that this successful strategy should be continued to sustain buy pressure on the INDY token. We wish to route all INDY buybacks to INDY holders. The DAO has a surplus of INDY and, at the moment, no diversification into other assets. Furthermore, INDY stakers are seen as prime candidates to receive these INDY buybacks as data suggests that they have a 90% retention rate of their INDY rewards. INDY rewards also benefit INDY stakers as it allows their rewards to compound, i.e. INDY rewards from staking increase the holders allocation and therefore enable them to receive a larger fraction of the next round's staking rewards. 
