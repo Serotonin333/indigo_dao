@@ -17,6 +17,17 @@ from dtypes import SCHEMA_BUYBACK
 plt.style.use("dark_background")
 
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+
 @dataclass
 class Buyback:
     ratios: np.ndarray
@@ -157,7 +168,20 @@ class Buyback:
                 self.redistribute_amount()
             self.add_amount(refresh_amount)
 
-        return pa.Table.from_batches(self.history)
+        metadata = {
+            "ratios": self.ratios,
+            "discounts": self.discounts,
+            "refresh_amounts": refresh_amounts,
+            "refresh_intervals": refresh_intervals,
+        }
+
+        for key, value in metadata.items():
+            if np.issubdtype(value.dtype, np.timedelta64):
+                value = list(value.astype("timedelta64[s]").astype(int))
+            metadata[key] = json.dumps(value, cls=NpEncoder)
+
+        self._schema = self._schema.with_metadata(metadata)
+        return pa.Table.from_batches(self.history, schema=self._schema)
 
 
 def get_breakpoints(
