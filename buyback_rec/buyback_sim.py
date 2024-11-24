@@ -23,7 +23,6 @@ class Buyback:
     discounts: np.ndarray
     ref_price: float = None
     amount_allocated: float = None
-    amount_purchased: float = 0
 
     def __post_init__(self):
         self.ratios = np.array(self.ratios)
@@ -37,10 +36,16 @@ class Buyback:
             self.amounts = self.amount_allocated * self.ratios
         else:
             self.amounts = np.zeros(self.ratios.shape)
+        self.amount_spent = 0
+        self.amount_purchased = 0
         self._schema = SCHEMA_BUYBACK
         self.history = []
         if (self.discounts > 100).any():
             raise ValueError("Items in `discounts` cannot be greater than 100%")
+
+    @property
+    def open_amount(self) -> float:
+        return self.amounts.sum()
 
     def add_amount(self, amount) -> None:
         self.amounts = (
@@ -49,6 +54,10 @@ class Buyback:
         self.amount_allocated = (
             self.amount_allocated + amount
         )  # add to the total amount toward buybacks
+
+    def redistribute_amount(self) -> None:
+        """Gathers all `amounts` remaining in pending orders and redistributes  according to `ratios`."""
+        self.amounts = self.open_amount * self.ratios
 
     def check_do_buyback(
         self, account_index: int, data: pd.DataFrame, append_history: bool = True
@@ -62,18 +71,23 @@ class Buyback:
         buyback_price = self.ref_price * (100 - discount) / 100
         price_hit = data[data.loc[:, "low"] < buyback_price]
         if (amount > 0) and len(price_hit):
-            buyback_amount = amount
+            spent = amount
+            purchased = spent / buyback_price
             self.amounts[account_index] = 0
-            self.amount_purchased = self.amount_purchased + buyback_amount
+            self.amount_spent = self.amount_spent + spent
+            self.amount_purchased = self.amount_purchased + purchased
             record_dict = {
                 "trigger_time": [price_hit.iloc[0]["start_time"]],
-                "amount": [buyback_amount],
+                "amount": [spent],
                 "price": [buyback_price],
+                "purchased": [purchased],
                 "ref_price": [self.ref_price],
                 "ratio": [ratio],
                 "discount": [discount],
                 "running_allocated": [self.amount_allocated],
+                "running_spent": [self.amount_spent],
                 "running_purchased": [self.amount_purchased],
+                "remaining_amount": [self.open_amount],
             }
             record = pa.record_batch(record_dict, SCHEMA_BUYBACK)
             if append_history:
@@ -88,6 +102,7 @@ class Buyback:
         data: pd.DataFrame | pa.Table,
         refresh_amounts: float | np.ndarray = None,
         refresh_intervals: timedelta | np.ndarray = None,
+        redistribute_on_refresh: bool = False,
     ) -> pa.Table:
         """_summary_
 
@@ -95,6 +110,7 @@ class Buyback:
             data (pd.DataFrame | pa.Table): Price data used for the buyback simulation. Requires columns `start_time`, `open`, and `low`.
             refresh_amounts (float | np.ndarray, optional): Amount of assets used to add to the buyback pool. If a single value, it is assumed that this amount is allocated for each refresh interval. If `None`, the allocation is set to 0 for each refresh interval. Defaults to None.
             refresh_intervals (timedelta | np.ndarray, optional): Duration from the last allocation refreshment that the next allocation refresh will occur. If a single timedelta, the refresh interval is assumed to be repeated. If `None` allocations are not refreshed at any point and the refresh interval is set to the entire interval spanned by the `data`. Defaults to None.
+            redistribute_on_refresh (bool, optional): Flag, if set to True will gather all amounts in pending orders and redistribute according to the `ratios` each refresh interval. Defaults to False
 
         Returns:
             _type_: _description_
@@ -132,12 +148,14 @@ class Buyback:
             zip(np.arange(n_refresh), refresh_idxs, refresh_amounts)
         ):
             self.ref_price = data.loc[idx, "open"]
-            if idx > 0:  # run current allocation first before refreshing
-                self.add_amount(refresh_amount)
-            # TODO: If we skip the first allocation then we are missing one of the refresh points?
             refresh_view = data.loc[idx:refresh_idx, :]
             for account_index in range(len(self.ratios)):
                 self.check_do_buyback(account_index=account_index, data=refresh_view)
+
+            # Refresh allocations for next buyback
+            if redistribute_on_refresh:
+                self.redistribute_amount()
+            self.add_amount(refresh_amount)
 
         return pa.Table.from_batches(self.history)
 
@@ -177,6 +195,7 @@ if __name__ == "__main__":
     pairs = df[["asset1", "asset2"]].drop_duplicates().values
 
     data = []
+    results = []
     for asset1, asset2 in pairs:
         in_pair = (df["asset1"] == asset1) & (df["asset2"] == asset2)
         data.append(df[in_pair].copy().sort_values(by=["start_time"]).reset_index())
@@ -195,10 +214,11 @@ if __name__ == "__main__":
             buyback = Buyback(
                 ratios=ratios, discounts=discounts, amount_allocated=initial_allocation
             )
-            buyback.simulate_buybacks(
-                asset_pair.loc[start:stop, :].copy(),
-                refresh_amounts=refresh_amount,
-                refresh_intervals=refresh_interval,
+            results.append(
+                buyback.simulate_buybacks(
+                    asset_pair.loc[start:stop, :].copy(),
+                    refresh_amounts=refresh_amount,
+                    refresh_intervals=refresh_interval,
+                    redistribute_on_refresh=True,
+                )
             )
-
-    # create a
