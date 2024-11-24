@@ -26,6 +26,8 @@ class Buyback:
     amount_purchased: float = 0
 
     def __post_init__(self):
+        self.ratios = np.array(self.ratios)
+        self.discounts = np.array(self.discounts)
         if np.round(self.ratios.sum(), decimals=3) != 1.0:
             warnings.warn(
                 "Input `ratios` do not add up to 1. They will automatically be normalized."
@@ -34,7 +36,7 @@ class Buyback:
         if self.amount_allocated is not None:
             self.amounts = self.amount_allocated * self.ratios
         else:
-            self.amounts = np.zeros(ratios.shape)
+            self.amounts = np.zeros(self.ratios.shape)
         self._schema = SCHEMA_BUYBACK
         self.history = []
         if (self.discounts > 100).any():
@@ -52,7 +54,8 @@ class Buyback:
         self, account_index: int, data: pd.DataFrame, append_history: bool = True
     ) -> pa.RecordBatch:
         """Checks if the amount allocated within `account_index` should be used for buybacks within the
-        period provided by `data` (which is expected to only contain data within the latest refresh)"""
+        period provided by `data` (which is expected to only contain data within the latest refresh)
+        """
         ratio = self.ratios[account_index]
         discount = self.discounts[account_index]
         amount = self.amounts[account_index]
@@ -82,32 +85,59 @@ class Buyback:
 
     def simulate_buybacks(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | pa.Table,
         refresh_amounts: float | np.ndarray = None,
         refresh_intervals: timedelta | np.ndarray = None,
-    ):
-        full_duration = data.iloc[-1]["start_time"] - data.iloc[0]["start_time"]
+    ) -> pa.Table:
+        """_summary_
+
+        Args:
+            data (pd.DataFrame | pa.Table): Price data used for the buyback simulation. Requires columns `start_time`, `open`, and `low`.
+            refresh_amounts (float | np.ndarray, optional): Amount of assets used to add to the buyback pool. If a single value, it is assumed that this amount is allocated for each refresh interval. If `None`, the allocation is set to 0 for each refresh interval. Defaults to None.
+            refresh_intervals (timedelta | np.ndarray, optional): Duration from the last allocation refreshment that the next allocation refresh will occur. If a single timedelta, the refresh interval is assumed to be repeated. If `None` allocations are not refreshed at any point and the refresh interval is set to the entire interval spanned by the `data`. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
+        if isinstance(data, pa.Table):
+            data = data.to_pandas()
+        first_timestamp = data.iloc[0]["start_time"]
+        full_duration = data.iloc[-1]["start_time"] - first_timestamp
+
         if refresh_intervals is None:
-            refresh_timestamps = np.array([full_duration])
-        elif not isinstance(refresh_intervals, np.ndarrary):
+            refresh_intervals = np.array([full_duration])
+        elif not isinstance(refresh_intervals, np.ndarray):
             # if it's a single value explicitly create each refresh time
-            refresh_timestamps = np.arange(
+            refresh_intervals = np.arange(
                 refresh_intervals, full_duration, refresh_intervals
             )
-        else
+
+        # NOTE: it would be quicker to just require a consistent time delta and use some integer multiple (index) for the refresh interval.
+        refresh_timestamps = first_timestamp + refresh_intervals
+        refresh_idxs = np.array(
+            [
+                np.argmin(abs(data.loc[:, "start_time"] - refresh))
+                for refresh in refresh_timestamps
+            ]
+        )
+        n_refresh = len(refresh_idxs)
+
         if refresh_amounts is None:
             refresh_amounts = np.zeros(refresh_intervals.shape)
         elif not isinstance(refresh_amounts, np.ndarray):
             # if it's a single value explicitly create each new allocation
             refresh_amounts = np.ones(refresh_intervals.shape) * refresh_amounts
 
-        self.ref_price = data.iloc[0]["open"]
-        executed_ratios = []
-        excecuted_amounts = []
-        executed_prices = []
-        for refresh_interval, refresh_amount in list(zip(refresh_intervals, refresh_amounts)):
-            refresh_end = 
-
+        for idx, refresh_idx, refresh_amount in list(
+            zip(np.arange(n_refresh), refresh_idxs, refresh_amounts)
+        ):
+            self.ref_price = data.loc[idx, "open"]
+            if idx > 0:  # run current allocation first before refreshing
+                self.add_amount(refresh_amount)
+            # TODO: If we skip the first allocation then we are missing one of the refresh points?
+            refresh_view = data.loc[idx:refresh_idx, :]
+            for account_index in range(len(self.ratios)):
+                self.check_do_buyback(account_index=account_index, data=refresh_view)
 
         return pa.Table.from_batches(self.history)
 
@@ -134,6 +164,9 @@ if __name__ == "__main__":
     step_size = timedelta(days=5)
     ratios = [0.1, 0.2, 0.3, 0.4]
     discounts = [61.8, 38.2, 23.6, 0]
+    initial_allocation = 100_000
+    refresh_amount = 10_000
+    refresh_interval = timedelta(days=5)
     ds_path = Path.cwd() / "buyback_rec/database"
     dataset = ds.dataset(ds_path)
     df = (
@@ -159,7 +192,13 @@ if __name__ == "__main__":
             start,
             stop,
         ) in break_indicies:  # simulate a buyback startegy over each period
-            buyback = Buyback(ratios=ratios, discounts=discounts)
-            buyback.simulate_buybacks(asset_pair.loc[start:stop, :])
+            buyback = Buyback(
+                ratios=ratios, discounts=discounts, amount_allocated=initial_allocation
+            )
+            buyback.simulate_buybacks(
+                asset_pair.loc[start:stop, :].copy(),
+                refresh_amounts=refresh_amount,
+                refresh_intervals=refresh_interval,
+            )
 
     # create a
