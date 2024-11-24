@@ -27,22 +27,28 @@ buyback_np = [
     ("trigger_time", "datetime64[s]"),
     ("amount", np.float32),
     ("price", np.float32),
+    ("purchased", np.float32),
     ("ref_price", np.float32),
     ("ratio", np.float32),
     ("discount", np.float32),
     ("running_allocated", np.float32),
+    ("running_spent", np.float32),
     ("running_purchased", np.float32),
+    ("remaining_amount", np.float32),
 ]
 
 buyback_pa = [
     ("trigger_time", pa.timestamp("s")),
     ("amount", pa.float32()),
     ("price", pa.float32()),
+    ("purchased", pa.float32()),
     ("ref_price", pa.float32()),
     ("ratio", pa.float32()),
     ("discount", pa.float32()),
     ("running_allocated", pa.float32()),
+    ("running_spent", pa.float32()),
     ("running_purchased", pa.float32()),
+    ("remaining_amount", pa.float32()),
 ]
 
 
