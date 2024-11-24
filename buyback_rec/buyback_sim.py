@@ -147,7 +147,8 @@ class Buyback:
                 for refresh in refresh_timestamps
             ]
         )
-        n_refresh = len(refresh_idxs)
+        start_idxs = np.roll(refresh_idxs, shift=1)
+        start_idxs[0] = 0
 
         if refresh_amounts is None:
             refresh_amounts = np.zeros(refresh_intervals.shape)
@@ -155,11 +156,11 @@ class Buyback:
             # if it's a single value explicitly create each new allocation
             refresh_amounts = np.ones(refresh_intervals.shape) * refresh_amounts
 
-        for idx, refresh_idx, refresh_amount in list(
-            zip(np.arange(n_refresh), refresh_idxs, refresh_amounts)
+        for start_idx, refresh_idx, refresh_amount in list(
+            zip(start_idxs, refresh_idxs, refresh_amounts)
         ):
-            self.ref_price = data.loc[idx, "open"]
-            refresh_view = data.loc[idx:refresh_idx, :]
+            self.ref_price = data.loc[start_idx, "open"]
+            refresh_view = data.loc[start_idx:refresh_idx, :]
             for account_index in range(len(self.ratios)):
                 self.check_do_buyback(account_index=account_index, data=refresh_view)
 
