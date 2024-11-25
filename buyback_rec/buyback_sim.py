@@ -13,6 +13,7 @@ from pyarrow import dataset as ds
 from pathlib import Path
 import warnings
 from dtypes import SCHEMA_BUYBACK
+import itertools
 
 plt.style.use("dark_background")
 
@@ -30,6 +31,7 @@ class NpEncoder(json.JSONEncoder):
 
 @dataclass
 class Buyback:
+    identifier: str
     ratios: np.ndarray
     discounts: np.ndarray
     ref_price: float = None
@@ -71,11 +73,20 @@ class Buyback:
         self.amounts = self.open_amount * self.ratios
 
     def check_do_buyback(
-        self, account_index: int, data: pd.DataFrame, append_history: bool = True
+        self,
+        account_index: int,
+        data: pd.DataFrame,
+        run_start_time: np.timedelta64 | None = None,
+        run_start_price: float | None = None,
+        append_history: bool = True,
     ) -> pa.RecordBatch:
         """Checks if the amount allocated within `account_index` should be used for buybacks within the
         period provided by `data` (which is expected to only contain data within the latest refresh)
         """
+        if run_start_time is None:
+            run_start_time = data.iloc[0]["start_time"]
+        if run_start_price is None:
+            run_start_price = data.iloc[0]["open"]
         ratio = self.ratios[account_index]
         discount = self.discounts[account_index]
         amount = self.amounts[account_index]
@@ -88,6 +99,9 @@ class Buyback:
             self.amount_spent = self.amount_spent + spent
             self.amount_purchased = self.amount_purchased + purchased
             record_dict = {
+                "identifier": [self.identifier],
+                "start_time": [run_start_time],
+                "last_reset_time": [data.iloc[0]["start_time"]],
                 "trigger_time": [price_hit.iloc[0]["start_time"]],
                 "amount": [spent],
                 "price": [buyback_price],
@@ -95,9 +109,13 @@ class Buyback:
                 "ref_price": [self.ref_price],
                 "ratio": [ratio],
                 "discount": [discount],
+                "start_price": [run_start_price],
                 "running_allocated": [self.amount_allocated],
                 "running_spent": [self.amount_spent],
                 "running_purchased": [self.amount_purchased],
+                "running_return": [
+                    self.amount_purchased * buyback_price / self.amount_spent
+                ],
                 "remaining_amount": [self.open_amount],
             }
             record = pa.record_batch(record_dict, SCHEMA_BUYBACK)
@@ -159,10 +177,17 @@ class Buyback:
         for start_idx, refresh_idx, refresh_amount in list(
             zip(start_idxs, refresh_idxs, refresh_amounts)
         ):
+            run_start_time = data.iloc[0]["start_time"]
+            run_start_price = data.iloc[0]["open"]
             self.ref_price = data.loc[start_idx, "open"]
             refresh_view = data.loc[start_idx:refresh_idx, :]
             for account_index in range(len(self.ratios)):
-                self.check_do_buyback(account_index=account_index, data=refresh_view)
+                self.check_do_buyback(
+                    account_index=account_index,
+                    data=refresh_view,
+                    run_start_time=run_start_time,
+                    run_start_price=run_start_price,
+                )
 
             # Refresh allocations for next buyback
             if redistribute_on_refresh:
@@ -194,7 +219,7 @@ def get_breakpoints(
     if not isinstance(timestamps, pd.DataFrame):
         timestamps = pd.DataFrame(timestamps, columns=["start_time"])
 
-    idx_time = timestamps.iloc[1] - timestamps.iloc[0]
+    idx_time = (timestamps.iloc[1] - timestamps.iloc[0]).iloc[0]
     step_idx = int(window_time / step_time)
     window_idx = int(window_time / idx_time)
     window_start_times = timestamps[:-window_idx:step_idx]
@@ -202,7 +227,85 @@ def get_breakpoints(
     return [(start_idx, start_idx + window_idx) for start_idx in window_start_idx]
 
 
+def decode_metadata(metadata):
+    decoded = {}
+    for key, value in metadata.items():
+        d_key = key.decode("utf-8")
+        d_value = np.array(json.loads(value)).astype(np.float32)
+        if d_key == "refresh_intervals":
+            d_value = d_value.astype("timedelta64[s]")
+        decoded[d_key] = d_value
+    return decoded
+
+
+def buyback_overview(result: pa.Table):
+    metadata = decode_metadata(result.schema.metadata)
+    ratios = metadata["ratios"]
+    discounts = metadata["discounts"]
+    refresh_amounts = metadata["refresh_amounts"]
+    refresh_intervals = metadata["refresh_intervals"]
+
+    result = result.to_pandas()
+    identifiers = result["identifier"].drop_duplicates()
+
+    id_list = []
+    ratio_list = []
+    discount_list = []
+    delay_min = []
+    delay_max = []
+    delay_mean = []
+    end_discount_running_return = []
+    # don't do `for (ident, ratio), subtable in result.groupby(["identifier", "ratio"]):` because we want metadata from the orders that didn't execute too
+    for ident in identifiers:  # group metadata for each backtest run
+        for r_idx, ratio in enumerate(ratios):
+            id_list.append(ident)
+            ratio_list.append(ratio)
+            discount_list.append(discounts[r_idx])
+            idxs = result[
+                (result["ratio"] == ratio) & (result["identifier"] == ident)
+            ].index
+            subtable = result.loc[idxs, :]
+            if not len(subtable):
+                delay_min.append(None)
+                delay_max.append(None)
+                delay_mean.append(None)
+                end_discount_running_return.append(None)
+            else:
+                subtable["trigger_delay"] = (
+                    subtable["trigger_time"] - subtable["start_time"]
+                )
+                subtable["discount_running_spent"] = subtable["amount"].cumsum()
+                subtable["discount_running_purchased"] = subtable["purchased"].cumsum()
+                subtable["discount_running_return"] = (
+                    subtable["discount_running_purchased"]
+                    * subtable["price"]
+                    / subtable["discount_running_spent"]
+                )
+
+                desc = subtable.describe()
+                delay_min.append(desc.loc["min", "trigger_delay"])
+                delay_max.append(desc.loc["max", "trigger_delay"])
+                delay_mean.append(desc.loc["mean", "trigger_delay"])
+                end_discount_running_return.append(
+                    subtable["discount_running_return"].values[-1]
+                )
+
+    # aggregate metadata for all groups
+
+    overview = {
+        "identifier": id_list,
+        "ratio": ratio_list,
+        "discount": discount_list,
+        "delay_min": delay_min,
+        "delay_max": delay_max,
+        "delay_mean": delay_mean,
+        "end_discount_running_return": end_discount_running_return,
+    }
+    overview = pa.table(overview)
+
+
 if __name__ == "__main__":
+    counter = itertools.count()
     run_timescale = timedelta(days=120)  # 4 month windows
     step_size = timedelta(days=5)
     ratios = [0.1, 0.2, 0.3, 0.4]
@@ -223,7 +326,9 @@ if __name__ == "__main__":
     results = []
     for asset1, asset2 in pairs:
         in_pair = (df["asset1"] == asset1) & (df["asset2"] == asset2)
-        data.append(df[in_pair].copy().sort_values(by=["start_time"]).reset_index())
+        data.append(
+            df[in_pair].copy().sort_values(by=["start_time"]).reset_index(drop=True)
+        )
 
     for asset_pair in data:
         break_indicies = get_breakpoints(
@@ -237,13 +342,17 @@ if __name__ == "__main__":
             stop,
         ) in break_indicies:  # simulate a buyback startegy over each period
             buyback = Buyback(
-                ratios=ratios, discounts=discounts, amount_allocated=initial_allocation
+                identifier=str(next(counter)),
+                ratios=ratios,
+                discounts=discounts,
+                amount_allocated=initial_allocation,
             )
             results.append(
                 buyback.simulate_buybacks(
-                    asset_pair.loc[start:stop, :].copy(),
+                    asset_pair.loc[start:stop, :].copy().reset_index(drop=True),
                     refresh_amounts=refresh_amount,
                     refresh_intervals=refresh_interval,
                     redistribute_on_refresh=True,
                 )
             )
+            buyback_overview(result=results[-1])
