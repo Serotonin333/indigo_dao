@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pyarrow import dataset as ds
 from pathlib import Path
 import warnings
-from dtypes import SCHEMA_BUYBACK
+from dtypes import SCHEMA_BUYBACK, SCHEMA_OVERVIEW
 import itertools
 
 plt.style.use("dark_background")
@@ -238,17 +238,23 @@ def decode_metadata(metadata):
     return decoded
 
 
-def buyback_overview(result: pa.Table):
+def buyback_overview(result: pa.Table) -> pa.RecordBatch:
     metadata = decode_metadata(result.schema.metadata)
     ratios = metadata["ratios"]
     discounts = metadata["discounts"]
     refresh_amounts = metadata["refresh_amounts"]
     refresh_intervals = metadata["refresh_intervals"]
-
+    # convert from interval from start to interval since last refresh
+    delta = np.roll(refresh_intervals.astype(int), shift=1)
+    delta[0] = 0
+    delta = delta.astype("timedelta64[s]")
+    refresh_intervals = refresh_intervals - delta
     result = result.to_pandas()
     identifiers = result["identifier"].drop_duplicates()
 
     id_list = []
+    running_return_mean = []
+    end_running_return = []
     ratio_list = []
     discount_list = []
     delay_min = []
@@ -258,7 +264,12 @@ def buyback_overview(result: pa.Table):
     # don't do `for (ident, ratio), subtable in result.groupby(["identifier", "ratio"]):` because we want metadata from the orders that didn't execute too
     for ident in identifiers:  # group metadata for each backtest run
         for r_idx, ratio in enumerate(ratios):
+            # will have duplicates across all discounts
             id_list.append(ident)
+            running_return_mean.append(result["running_return"].mean())
+            end_running_return.append(result["running_return"].iloc[-1])
+
+            # unique to each discount
             ratio_list.append(ratio)
             discount_list.append(discounts[r_idx])
             idxs = result[
@@ -291,17 +302,24 @@ def buyback_overview(result: pa.Table):
                 )
 
     # aggregate metadata for all groups
-
+    # TODO: Including every refresh amount/interval brings it back to the buyback table? Assuming a constant refresh amount/interval here
+    n = len(id_list)
+    refresh_amounts = refresh_amounts[:n]
+    refresh_intervals = refresh_intervals[:n]
     overview = {
         "identifier": id_list,
         "ratio": ratio_list,
         "discount": discount_list,
+        "refresh_amount": refresh_amounts,
+        "refresh_interval": refresh_intervals,
         "delay_min": delay_min,
         "delay_max": delay_max,
         "delay_mean": delay_mean,
+        "end_running_return": end_running_return,
         "end_discount_running_return": end_discount_running_return,
+        "running_return_mean": running_return_mean,
     }
-    overview = pa.table(overview)
+    return pa.record_batch(overview, schema=SCHEMA_OVERVIEW)
 
 
 if __name__ == "__main__":
@@ -324,6 +342,7 @@ if __name__ == "__main__":
 
     data = []
     results = []
+    overviews = []
     for asset1, asset2 in pairs:
         in_pair = (df["asset1"] == asset1) & (df["asset2"] == asset2)
         data.append(
@@ -355,4 +374,8 @@ if __name__ == "__main__":
                     redistribute_on_refresh=True,
                 )
             )
-            buyback_overview(result=results[-1])
+
+            overview = buyback_overview(result=results[-1])
+            overviews.append(overview)
+    overviews = pa.Table.from_batches(overviews)
+    print(overviews.to_pandas().head())
