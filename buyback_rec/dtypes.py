@@ -42,6 +42,20 @@ buyback_np = [
     ("remaining_amount", np.float32),
 ]
 
+overview_np = [
+    ("identifier", np.str_),
+    ("ratio", np.float32),
+    ("discount", np.float32),
+    ("refresh_amount", np.float32),
+    ("refresh_interval", "timedelta64[s]"),
+    ("delay_min", "timedelta64[s]"),
+    ("delay_max", "timedelta64[s]"),
+    ("delay_mean", "timedelta64[s]"),
+    ("end_running_return", np.float32),
+    ("end_discount_running_return", np.float32),
+    ("running_return_mean", np.float32),
+]
+
 buyback_pa = [
     ("identifier", pa.string()),
     ("start_time", pa.timestamp("s")),
@@ -61,12 +75,27 @@ buyback_pa = [
     ("remaining_amount", pa.float32()),
 ]
 
+overview_pa = [
+    ("identifier", pa.string()),
+    ("ratio", pa.float32()),
+    ("discount", pa.float32()),
+    ("refresh_amount", pa.float32()),
+    ("refresh_interval", pa.duration("s")),
+    ("delay_min", pa.duration("s")),
+    ("delay_max", pa.duration("s")),
+    ("delay_mean", pa.duration("s")),
+    ("end_running_return", pa.float32()),
+    ("end_discount_running_return", pa.float32()),
+    ("running_return_mean", pa.float32()),
+]
 
 DTYPE_CANDLE = np.dtype(candle_np)
 DTYPE_BUYBACK = np.dtype(buyback_np)
+DTYPE_OVERVIEW = np.dtype(overview_np)
 
 SCHEMA_CANDLE = pa.schema(candle_pa)
 SCHEMA_BUYBACK = pa.schema(buyback_pa)
+SCHEMA_OVERVIEW = pa.schema(overview_pa)
 
 if __name__ == "__main__":
     print(DTYPE_BUYBACK)
