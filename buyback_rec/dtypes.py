@@ -89,6 +89,18 @@ overview_pa = [
     ("running_return_mean", pa.float32()),
 ]
 
+settings_pa = [
+    ("identifier", pa.string()),
+    ("ratios", pa.list_(pa.float32())),
+    ("discounts", pa.list_(pa.float32())),
+    ("initial_allocations", pa.list_(pa.float32())),
+    ("refresh_amounts", pa.list_(pa.float32())),
+    ("refresh_intervals", pa.list_(pa.duration("s"))),
+    ("run_duration", pa.duration("s")),
+    ("asset1", pa.string()),
+    ("asset2", pa.string()),
+]
+
 DTYPE_CANDLE = np.dtype(candle_np)
 DTYPE_BUYBACK = np.dtype(buyback_np)
 DTYPE_OVERVIEW = np.dtype(overview_np)
@@ -96,7 +108,9 @@ DTYPE_OVERVIEW = np.dtype(overview_np)
 SCHEMA_CANDLE = pa.schema(candle_pa)
 SCHEMA_BUYBACK = pa.schema(buyback_pa)
 SCHEMA_OVERVIEW = pa.schema(overview_pa)
+SCHEMA_SETTINGS = pa.schema(settings_pa)
 
 if __name__ == "__main__":
     print(DTYPE_BUYBACK)
     print(SCHEMA_BUYBACK)
+    print(SCHEMA_SETTINGS)

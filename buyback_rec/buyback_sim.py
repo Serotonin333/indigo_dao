@@ -1,19 +1,15 @@
 import numpy as np
-from scipy.stats import norm
 from dataclasses import dataclass
 import pandas as pd
 import pyarrow as pa
-import http.client
 import json
-from itertools import accumulate
 from matplotlib import pyplot as plt
-from scipy.stats import gamma
 from datetime import datetime, timedelta
 from pyarrow import dataset as ds
 from pathlib import Path
 import warnings
-from dtypes import SCHEMA_BUYBACK, SCHEMA_OVERVIEW
-import itertools
+from dtypes import SCHEMA_BUYBACK, SCHEMA_OVERVIEW, SCHEMA_SETTINGS
+from uuid import uuid4
 
 plt.style.use("dark_background")
 
@@ -99,7 +95,7 @@ class Buyback:
             self.amount_spent = self.amount_spent + spent
             self.amount_purchased = self.amount_purchased + purchased
             record_dict = {
-                "identifier": [self.identifier],
+                "identifier": [str(self.identifier)],
                 "start_time": [run_start_time],
                 "last_reset_time": [data.iloc[0]["start_time"]],
                 "trigger_time": [price_hit.iloc[0]["start_time"]],
@@ -128,12 +124,12 @@ class Buyback:
 
     def simulate_buybacks(
         self,
-        data: pd.DataFrame | pa.Table,
+        price_data: pd.DataFrame | pa.Table,
         refresh_amounts: float | np.ndarray = None,
         refresh_intervals: timedelta | np.ndarray = None,
         redistribute_on_refresh: bool = False,
     ) -> pa.Table:
-        """_summary_
+        """Method to run a simulation of the buyback structure using the input price candlestick `price_data`. Optionally, additional allocations for buybacks may be added at points during the simulation as specified by the `refresh_amounts` and `refresh_intervals` arrays. If a single value is passed for these arguments it is assumed that the amount specified is repeated every refresh interval until the end date of the simulation. Additionally, a flag can enable the pending limit orders to be withdrawn and resubmitted/redistributed along with the refresh amount if `redistribute_on_refresh` is set to True.
 
         Args:
             data (pd.DataFrame | pa.Table): Price data used for the buyback simulation. Requires columns `start_time`, `open`, and `low`.
@@ -142,12 +138,12 @@ class Buyback:
             redistribute_on_refresh (bool, optional): Flag, if set to True will gather all amounts in pending orders and redistribute according to the `ratios` each refresh interval. Defaults to False
 
         Returns:
-            _type_: _description_
+            pa.Table: Table containing the history of buybacks transacted
         """
-        if isinstance(data, pa.Table):
-            data = data.to_pandas()
-        first_timestamp = data.iloc[0]["start_time"]
-        full_duration = data.iloc[-1]["start_time"] - first_timestamp
+        if isinstance(price_data, pa.Table):
+            price_data = price_data.to_pandas()
+        first_timestamp = price_data.iloc[0]["start_time"]
+        full_duration = price_data.iloc[-1]["start_time"] - first_timestamp
 
         if refresh_intervals is None:
             refresh_intervals = np.array([full_duration])
@@ -161,7 +157,7 @@ class Buyback:
         refresh_timestamps = first_timestamp + refresh_intervals
         refresh_idxs = np.array(
             [
-                np.argmin(abs(data.loc[:, "start_time"] - refresh))
+                np.argmin(abs(price_data.loc[:, "start_time"] - refresh))
                 for refresh in refresh_timestamps
             ]
         )
@@ -177,10 +173,10 @@ class Buyback:
         for start_idx, refresh_idx, refresh_amount in list(
             zip(start_idxs, refresh_idxs, refresh_amounts)
         ):
-            run_start_time = data.iloc[0]["start_time"]
-            run_start_price = data.iloc[0]["open"]
-            self.ref_price = data.loc[start_idx, "open"]
-            refresh_view = data.loc[start_idx:refresh_idx, :]
+            run_start_time = price_data.iloc[0]["start_time"]
+            run_start_price = price_data.iloc[0]["open"]
+            self.ref_price = price_data.loc[start_idx, "open"]
+            refresh_view = price_data.loc[start_idx:refresh_idx, :]
             for account_index in range(len(self.ratios)):
                 self.check_do_buyback(
                     account_index=account_index,
@@ -322,8 +318,47 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
     return pa.record_batch(overview, schema=SCHEMA_OVERVIEW)
 
 
+def make_settings_record(
+    ratios: float | list | np.ndarray,
+    discounts: float | list | np.ndarray,
+    initial_allocations: float | list | np.ndarray,
+    refresh_amounts: float | list | np.ndarray,
+    refresh_intervals: float | list | np.ndarray,
+    run_duration: timedelta | np.timedelta64,
+    asset1: str,
+    asset2: str,
+    identifier: str | None = None,
+) -> pa.RecordBatch:
+    if np.isscalar(ratios):
+        ratios = [float(ratios)]
+    if np.isscalar(discounts):
+        discounts = [float(discounts)]
+    if np.isscalar(initial_allocations):
+        initial_allocations = [float(initial_allocations)]
+    if np.isscalar(refresh_amounts):
+        refresh_amounts = [float(refresh_amounts)]
+    if isinstance(refresh_intervals, (timedelta, np.timedelta64)):
+        refresh_intervals = [refresh_intervals]
+
+    if identifier is not None:
+        identifier = uuid4()
+    return pa.record_batch(
+        {
+            "identifier": [str(identifier)],
+            "ratios": [ratios],
+            "discounts": [discounts],
+            "initial_allocations": [initial_allocations],
+            "refresh_amounts": [refresh_amounts],
+            "refresh_intervals": [refresh_intervals],
+            "run_duration": [run_duration],
+            "asset1": [asset1],
+            "asset2": [asset2],
+        },
+        schema=SCHEMA_SETTINGS,
+    )
+
+
 if __name__ == "__main__":
-    counter = itertools.count()
     run_timescale = timedelta(days=120)  # 4 month windows
     step_size = timedelta(days=5)
     ratios = [0.1, 0.2, 0.3, 0.4]
@@ -341,6 +376,7 @@ if __name__ == "__main__":
     pairs = df[["asset1", "asset2"]].drop_duplicates().values
 
     data = []
+    settings = []
     results = []
     overviews = []
     for asset1, asset2 in pairs:
@@ -360,8 +396,21 @@ if __name__ == "__main__":
             start,
             stop,
         ) in break_indicies:  # simulate a buyback startegy over each period
+            identifier = uuid4()
+            settings_record = make_settings_record(
+                ratios=ratios,
+                discounts=discounts,
+                initial_allocations=initial_allocation,
+                refresh_amounts=refresh_amount,
+                refresh_intervals=refresh_interval,
+                run_duration=run_timescale,
+                asset1=asset_pair["asset1"].iloc[0],
+                asset2=asset_pair["asset2"].iloc[0],
+                identifier=identifier,
+            )
+
             buyback = Buyback(
-                identifier=str(next(counter)),
+                identifier=identifier,
                 ratios=ratios,
                 discounts=discounts,
                 amount_allocated=initial_allocation,
@@ -371,11 +420,15 @@ if __name__ == "__main__":
                     asset_pair.loc[start:stop, :].copy().reset_index(drop=True),
                     refresh_amounts=refresh_amount,
                     refresh_intervals=refresh_interval,
-                    redistribute_on_refresh=True,
+                    redistribute_on_refresh=False,
                 )
             )
 
+            settings.append(settings_record)
             overview = buyback_overview(result=results[-1])
             overviews.append(overview)
+
+    settings = pa.Table.from_batches(settings)
     overviews = pa.Table.from_batches(overviews)
+    print(settings)
     print(overviews.to_pandas().head())
