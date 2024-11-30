@@ -6,6 +6,7 @@ import json
 from matplotlib import pyplot as plt
 from datetime import datetime, timedelta
 from pyarrow import dataset as ds
+from pyarrow import parquet as pq
 from pathlib import Path
 import warnings
 from dtypes import SCHEMA_BUYBACK, SCHEMA_OVERVIEW, SCHEMA_SETTINGS
@@ -47,9 +48,9 @@ class Buyback:
             self.amounts = np.zeros(self.ratios.shape)
         self.amount_spent = 0
         self.amount_purchased = 0
-        self.n_discount_refresh = np.zeros((len(discounts),))
+        self.n_discount_refresh = np.zeros((len(self.discounts),))
         self.n_refresh = 0
-        self.n_discount_buybacks = np.zeros((len(discounts),))
+        self.n_discount_buybacks = np.zeros((len(self.discounts),))
         self.n_buybacks = 0
         self._schema = SCHEMA_BUYBACK
         self.history = []
@@ -383,18 +384,28 @@ def make_settings_record(
     )
 
 
-if __name__ == "__main__":
-    run_timescale = timedelta(days=120)  # 4 month windows
-    step_size = timedelta(days=5)
-    ratios = [0.1, 0.2, 0.3, 0.4]
-    discounts = [61.8, 38.2, 23.6, 0]
-    initial_allocation = 100_000
-    refresh_amount = 10_000
-    refresh_interval = timedelta(days=5)
-    ds_path = Path.cwd() / "buyback_rec/database"
-    dataset = ds.dataset(ds_path)
+def simple_buyback_sim(
+    ratios: list,
+    discounts: list,
+    initial_allocation: float,
+    refresh_amount: float,
+    refresh_interval_days: int,
+    sim_len_days: int,
+    step_days: int,
+    redistribute_on_refresh: bool = False,
+    save_to_db: bool = False,
+):
+    run_window = timedelta(days=sim_len_days)  # 4 month windows
+    step_size = timedelta(days=step_days)
+    refresh_interval = timedelta(days=refresh_interval_days)
+    db_path = Path.cwd() / "buyback_rec/database"
+    candles_path = db_path / "candlestick_data"
+    id_path = db_path / "sim_ids"
+    overviews_path = db_path / "overviews"
+    records_path = db_path / "sim_records"
+    candles = ds.dataset(candles_path)
     df = (
-        dataset.to_table()
+        candles.to_table()
         .to_pandas()
         .sort_values(by=["asset1", "asset2", "start_time"])
     )
@@ -413,7 +424,7 @@ if __name__ == "__main__":
     for asset_pair in data:
         break_indicies = get_breakpoints(
             timestamps=asset_pair.start_time,
-            window_time=run_timescale,
+            window_time=run_window,
             step_time=step_size,
         )
 
@@ -428,7 +439,7 @@ if __name__ == "__main__":
                 initial_allocations=initial_allocation,
                 refresh_amounts=refresh_amount,
                 refresh_intervals=refresh_interval,
-                run_duration=run_timescale,
+                run_duration=run_window,
                 asset1=asset_pair["asset1"].iloc[0],
                 asset2=asset_pair["asset2"].iloc[0],
                 identifier=identifier,
@@ -445,7 +456,7 @@ if __name__ == "__main__":
                     asset_pair.loc[start:stop, :].copy().reset_index(drop=True),
                     refresh_amounts=refresh_amount,
                     refresh_intervals=refresh_interval,
-                    redistribute_on_refresh=False,
+                    redistribute_on_refresh=redistribute_on_refresh,
                 )
             )
 
@@ -453,7 +464,25 @@ if __name__ == "__main__":
             overview = buyback_overview(result=results[-1])
             overviews.append(overview)
 
+    results = pa.concat_tables(results)
     settings = pa.Table.from_batches(settings)
     overviews = pa.Table.from_batches(overviews)
-    print(settings)
-    print(overviews.to_pandas().head())
+
+    if save_to_db:
+        pq.write_to_dataset(table=results, root_path=records_path)
+        pq.write_to_dataset(table=overviews, root_path=overviews_path)
+        pq.write_to_dataset(table=settings, root_path=id_path)
+
+
+if __name__ == "__main__":
+    simple_buyback_sim(
+        ratios=[0.1, 0.2, 0.3, 0.4],
+        discounts=[61.8, 38.2, 23.6, 0],
+        initial_allocation=100_000,
+        refresh_amount=10_000,
+        refresh_interval_days=5,
+        sim_len_days=120,
+        step_days=5,
+        redistribute_on_refresh=False,
+        save_to_db=True,
+    )
