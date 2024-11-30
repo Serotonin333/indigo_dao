@@ -47,6 +47,10 @@ class Buyback:
             self.amounts = np.zeros(self.ratios.shape)
         self.amount_spent = 0
         self.amount_purchased = 0
+        self.n_discount_refresh = np.zeros((len(discounts),))
+        self.n_refresh = 0
+        self.n_discount_buybacks = np.zeros((len(discounts),))
+        self.n_buybacks = 0
         self._schema = SCHEMA_BUYBACK
         self.history = []
         if (self.discounts > 100).any():
@@ -56,13 +60,23 @@ class Buyback:
     def open_amount(self) -> float:
         return self.amounts.sum()
 
-    def add_amount(self, amount) -> None:
-        self.amounts = (
-            self.amounts + amount * self.ratios
-        )  # add the fractional amount to `amounts`
-        self.amount_allocated = (
-            self.amount_allocated + amount
-        )  # add to the total amount toward buybacks
+    def add_amount_proportionally(self, amount: float):
+        """Adds an amount split proportionally among all discounts"""
+        amounts = amount * self.ratios
+        indicies = np.arange(len(amounts))
+        self.add_amounts(amounts=amounts, indicies=indicies)
+
+    def add_amounts(self, amounts: list[float], indicies: list[int]) -> None:
+        """Adds a given amount to each discount index."""
+        for idx, amount in list(zip(indicies, amounts)):
+            self.amounts[idx] = (
+                self.amounts[idx] + amount
+            )  # add the fractional amount to `amounts`
+            self.amount_allocated = (
+                self.amount_allocated + amount
+            )  # add to the total amount toward buybacks
+            self.n_discount_refresh[idx] += 1
+            self.n_refresh += 1
 
     def redistribute_amount(self) -> None:
         """Gathers all `amounts` remaining in pending orders and redistributes  according to `ratios`."""
@@ -89,6 +103,8 @@ class Buyback:
         buyback_price = self.ref_price * (100 - discount) / 100
         price_hit = data[data.loc[:, "low"] < buyback_price]
         if (amount > 0) and len(price_hit):
+            self.n_discount_buybacks[account_index] += 1
+            self.n_buybacks += 1
             spent = amount
             purchased = spent / buyback_price
             self.amounts[account_index] = 0
@@ -113,6 +129,10 @@ class Buyback:
                     self.amount_purchased * buyback_price / self.amount_spent
                 ],
                 "remaining_amount": [self.open_amount],
+                "num_discount_buybacks": [self.n_discount_buybacks[account_index]],
+                "num_discount_refresh": [self.n_discount_refresh[account_index]],
+                "num_buybacks": [self.n_buybacks],
+                "num_refresh": [self.n_refresh],
             }
             record = pa.record_batch(record_dict, SCHEMA_BUYBACK)
             if append_history:
@@ -188,7 +208,7 @@ class Buyback:
             # Refresh allocations for next buyback
             if redistribute_on_refresh:
                 self.redistribute_amount()
-            self.add_amount(refresh_amount)
+            self.add_amount_proportionally(refresh_amount)
 
         metadata = {
             "ratios": self.ratios,
@@ -238,13 +258,7 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
     metadata = decode_metadata(result.schema.metadata)
     ratios = metadata["ratios"]
     discounts = metadata["discounts"]
-    refresh_amounts = metadata["refresh_amounts"]
-    refresh_intervals = metadata["refresh_intervals"]
-    # convert from interval from start to interval since last refresh
-    delta = np.roll(refresh_intervals.astype(int), shift=1)
-    delta[0] = 0
-    delta = delta.astype("timedelta64[s]")
-    refresh_intervals = refresh_intervals - delta
+
     result = result.to_pandas()
     identifiers = result["identifier"].drop_duplicates()
 
@@ -257,6 +271,10 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
     delay_max = []
     delay_mean = []
     end_discount_running_return = []
+    end_n_discount_buybacks = []
+    end_n_discount_refresh = []
+    end_n_buybacks = []
+    end_n_refresh = []
     # don't do `for (ident, ratio), subtable in result.groupby(["identifier", "ratio"]):` because we want metadata from the orders that didn't execute too
     for ident in identifiers:  # group metadata for each backtest run
         for r_idx, ratio in enumerate(ratios):
@@ -277,6 +295,8 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
                 delay_max.append(None)
                 delay_mean.append(None)
                 end_discount_running_return.append(None)
+                end_n_discount_buybacks.append(None)
+                end_n_discount_refresh.append(None)
             else:
                 subtable["trigger_delay"] = (
                     subtable["trigger_time"] - subtable["start_time"]
@@ -296,24 +316,29 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
                 end_discount_running_return.append(
                     subtable["discount_running_return"].values[-1]
                 )
+                end_n_discount_buybacks.append(
+                    subtable["num_discount_buybacks"].values[-1]
+                )
+                end_n_discount_refresh.append(
+                    subtable["num_discount_refresh"].values[-1]
+                )
+            end_n_buybacks.append(result["num_buybacks"].max())
+            end_n_refresh.append(result["num_refresh"].max())
 
-    # aggregate metadata for all groups
-    # TODO: Including every refresh amount/interval brings it back to the buyback table? Assuming a constant refresh amount/interval here
-    n = len(id_list)
-    refresh_amounts = refresh_amounts[:n]
-    refresh_intervals = refresh_intervals[:n]
     overview = {
         "identifier": id_list,
         "ratio": ratio_list,
         "discount": discount_list,
-        "refresh_amount": refresh_amounts,
-        "refresh_interval": refresh_intervals,
         "delay_min": delay_min,
         "delay_max": delay_max,
         "delay_mean": delay_mean,
         "end_running_return": end_running_return,
         "end_discount_running_return": end_discount_running_return,
         "running_return_mean": running_return_mean,
+        "end_num_discount_buybacks": end_n_discount_buybacks,
+        "end_num_discount_refresh": end_n_discount_refresh,
+        "end_num_buybacks": end_n_buybacks,
+        "end_num_refresh": end_n_refresh,
     }
     return pa.record_batch(overview, schema=SCHEMA_OVERVIEW)
 
