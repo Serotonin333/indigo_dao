@@ -353,6 +353,7 @@ def make_settings_record(
     run_duration: timedelta | np.timedelta64,
     asset1: str,
     asset2: str,
+    redistribute_on_refresh: bool,
     identifier: str | None = None,
 ) -> pa.RecordBatch:
     if np.isscalar(ratios):
@@ -379,6 +380,7 @@ def make_settings_record(
             "run_duration": [run_duration],
             "asset1": [asset1],
             "asset2": [asset2],
+            "redistribute_on_refresh": [redistribute_on_refresh],
         },
         schema=SCHEMA_SETTINGS,
     )
@@ -392,7 +394,9 @@ def simple_buyback_sim(
     refresh_interval_days: int,
     sim_len_days: int,
     step_days: int,
+    sim_start_price: float | None = None,
     redistribute_on_refresh: bool = False,
+    invert_pair: bool = False,
     save_to_db: bool = False,
 ):
     run_window = timedelta(days=sim_len_days)  # 4 month windows
@@ -409,6 +413,10 @@ def simple_buyback_sim(
         .to_pandas()
         .sort_values(by=["asset1", "asset2", "start_time"])
     )
+    if invert_pair:
+        df.loc[:, ["low", "high", "open", "close"]] = (
+            1 / df.loc[:, ["high", "low", "open", "close"]].values  # swap high/low
+        )
     pairs = df[["asset1", "asset2"]].drop_duplicates().values
 
     data = []
@@ -442,6 +450,7 @@ def simple_buyback_sim(
                 run_duration=run_window,
                 asset1=asset_pair["asset1"].iloc[0],
                 asset2=asset_pair["asset2"].iloc[0],
+                redistribute_on_refresh=redistribute_on_refresh,
                 identifier=identifier,
             )
 
@@ -451,9 +460,15 @@ def simple_buyback_sim(
                 discounts=discounts,
                 amount_allocated=initial_allocation,
             )
+            window_data = asset_pair.loc[start:stop, :].copy().reset_index(drop=True)
+            if sim_start_price is not None:
+                scale_factor = sim_start_price / window_data["open"].iloc[0]
+                window_data[["low", "high", "open", "close"]] = (
+                    window_data[["low", "high", "open", "close"]] * scale_factor
+                )
             results.append(
                 buyback.simulate_buybacks(
-                    asset_pair.loc[start:stop, :].copy().reset_index(drop=True),
+                    window_data,
                     refresh_amounts=refresh_amount,
                     refresh_intervals=refresh_interval,
                     redistribute_on_refresh=redistribute_on_refresh,
@@ -473,16 +488,22 @@ def simple_buyback_sim(
         pq.write_to_dataset(table=overviews, root_path=overviews_path)
         pq.write_to_dataset(table=settings, root_path=id_path)
 
+    return results, settings, overviews
+
 
 if __name__ == "__main__":
-    simple_buyback_sim(
-        ratios=[0.1, 0.2, 0.3, 0.4],
-        discounts=[61.8, 38.2, 23.6, 0],
+    results, settings, overviews = simple_buyback_sim(
+        ratios=[0.4, 0.3, 0.2, 0.1],
+        discounts=[0, 23.6, 38.2, 61.8],
         initial_allocation=100_000,
         refresh_amount=10_000,
         refresh_interval_days=5,
         sim_len_days=120,
         step_days=5,
-        redistribute_on_refresh=False,
+        redistribute_on_refresh=True,
         save_to_db=True,
+        sim_start_price=3,
+        invert_pair=True,
     )
+
+    print()

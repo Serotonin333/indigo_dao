@@ -103,6 +103,7 @@ settings_pa = [
     ("run_duration", pa.duration("s")),
     ("asset1", pa.string()),
     ("asset2", pa.string()),
+    ("redistribute_on_refresh", pa.bool_()),
 ]
 
 DTYPE_CANDLE = np.dtype(candle_np)
