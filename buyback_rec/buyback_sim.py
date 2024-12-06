@@ -171,7 +171,7 @@ class Buyback:
         elif not isinstance(refresh_intervals, np.ndarray):
             # if it's a single value explicitly create each refresh time
             refresh_intervals = np.arange(
-                refresh_intervals, full_duration, refresh_intervals
+                refresh_intervals, full_duration + refresh_intervals, refresh_intervals
             )
 
         # NOTE: it would be quicker to just require a consistent time delta and use some integer multiple (index) for the refresh interval.
@@ -191,6 +191,7 @@ class Buyback:
             # if it's a single value explicitly create each new allocation
             refresh_amounts = np.ones(refresh_intervals.shape) * refresh_amounts
 
+        # TODO: there is potentially a case here where there is some time less than the refresh interval that isn't accounted for
         for start_idx, refresh_idx, refresh_amount in list(
             zip(start_idxs, refresh_idxs, refresh_amounts)
         ):
@@ -354,6 +355,7 @@ def make_settings_record(
     asset1: str,
     asset2: str,
     redistribute_on_refresh: bool,
+    start_price: float,
     identifier: str | None = None,
 ) -> pa.RecordBatch:
     if np.isscalar(ratios):
@@ -381,6 +383,7 @@ def make_settings_record(
             "asset1": [asset1],
             "asset2": [asset2],
             "redistribute_on_refresh": [redistribute_on_refresh],
+            "start_price": [start_price],
         },
         schema=SCHEMA_SETTINGS,
     )
@@ -441,19 +444,6 @@ def simple_buyback_sim(
             stop,
         ) in break_indicies:  # simulate a buyback startegy over each period
             identifier = uuid4()
-            settings_record = make_settings_record(
-                ratios=ratios,
-                discounts=discounts,
-                initial_allocations=initial_allocation,
-                refresh_amounts=refresh_amount,
-                refresh_intervals=refresh_interval,
-                run_duration=run_window,
-                asset1=asset_pair["asset1"].iloc[0],
-                asset2=asset_pair["asset2"].iloc[0],
-                redistribute_on_refresh=redistribute_on_refresh,
-                identifier=identifier,
-            )
-
             buyback = Buyback(
                 identifier=identifier,
                 ratios=ratios,
@@ -466,6 +456,21 @@ def simple_buyback_sim(
                 window_data[["low", "high", "open", "close"]] = (
                     window_data[["low", "high", "open", "close"]] * scale_factor
                 )
+
+            start_price = window_data["open"].iloc[0]
+            settings_record = make_settings_record(
+                ratios=ratios,
+                discounts=discounts,
+                initial_allocations=initial_allocation,
+                refresh_amounts=refresh_amount,
+                refresh_intervals=refresh_interval,
+                run_duration=run_window,
+                asset1=asset_pair["asset1"].iloc[0],
+                asset2=asset_pair["asset2"].iloc[0],
+                redistribute_on_refresh=redistribute_on_refresh,
+                identifier=identifier,
+                start_price=start_price,
+            )
             results.append(
                 buyback.simulate_buybacks(
                     window_data,
@@ -502,8 +507,8 @@ if __name__ == "__main__":
         step_days=5,
         redistribute_on_refresh=True,
         save_to_db=True,
-        sim_start_price=3,
-        invert_pair=True,
+        sim_start_price=1,
+        invert_pair=False,
     )
 
     print()
