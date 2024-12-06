@@ -49,6 +49,11 @@ overview_pa = [
     ("end_running_return", pa.float32()),
     ("end_discount_running_return", pa.float32()),
     ("running_return_mean", pa.float32()),
+    ("price_mean", pa.float32()),
+    ("price_slope", pa.float32()),
+    ("price_slope_ppd", pa.float32()),
+    ("final_over_start_price", pa.float32()),
+    ("price_std", pa.float32()),
 ]
 
 settings_pa = [

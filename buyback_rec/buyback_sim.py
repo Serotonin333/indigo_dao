@@ -256,7 +256,26 @@ def decode_metadata(metadata):
     return decoded
 
 
-def buyback_overview(result: pa.Table) -> pa.RecordBatch:
+def get_price_statistics(data: pd.DataFrame):
+    price_data = data[["open", "close", "high", "low"]]
+    row_price_means = price_data.values.mean(axis=1)
+    price_mean = row_price_means.mean()
+
+    dates = data["start_time"]
+    net_days = np.array([(date - dates[0]).total_seconds() / 86400 for date in dates])
+    avg_step = (net_days[1:] - net_days[:-1]).mean()
+    # TODO Correct and generate these values
+    price_slope = price_mean / avg_step
+    price_slope_ppd = price_mean / avg_step
+    # price_slope_ppd = np.polyfit(data["start_times"].values, price_data, 1)[
+    #     0
+    # ]  # in % per day
+    price_std = price_data.values.flatten().std()
+    final_over_start_price = data["close"].values[-1] - data["open"].values[0]
+    return price_mean, price_slope, price_slope_ppd, final_over_start_price, price_std
+
+
+def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch:
     metadata = decode_metadata(result.schema.metadata)
     ratios = metadata["ratios"]
     discounts = metadata["discounts"]
@@ -277,6 +296,16 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
     end_n_discount_refresh = []
     end_n_buybacks = []
     end_n_refresh = []
+
+    price_mean, price_slope, price_slope_ppd, final_over_start_price, price_std = (
+        get_price_statistics(data)
+    )
+
+    price_means = []
+    price_slopes = []
+    price_slopes_ppd = []
+    final_over_start_prices = []
+    price_stds = []
     # don't do `for (ident, ratio), subtable in result.groupby(["identifier", "ratio"]):` because we want metadata from the orders that didn't execute too
     for ident in identifiers:  # group metadata for each backtest run
         for r_idx, ratio in enumerate(ratios):
@@ -324,6 +353,14 @@ def buyback_overview(result: pa.Table) -> pa.RecordBatch:
                 end_n_discount_refresh.append(
                     subtable["num_discount_refresh"].values[-1]
                 )
+
+                # add price statistics
+                price_means.append(price_mean)
+                price_slopes.append(price_slope)
+                price_slopes_ppd.append(price_slope_ppd)
+                final_over_start_prices.append(final_over_start_price)
+                price_stds.append(price_std)
+
             end_n_buybacks.append(result["num_buybacks"].max())
             end_n_refresh.append(result["num_refresh"].max())
 
@@ -481,7 +518,7 @@ def simple_buyback_sim(
             )
 
             settings.append(settings_record)
-            overview = buyback_overview(result=results[-1])
+            overview = buyback_overview(result=results[-1], data=window_data)
             overviews.append(overview)
 
     results = pa.concat_tables(results)
