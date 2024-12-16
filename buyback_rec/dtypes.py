@@ -54,6 +54,7 @@ overview_pa = [
     ("price_slope_ppd", pa.float32()),
     ("final_over_start_price", pa.float32()),
     ("price_std", pa.float32()),
+    ("price_rel_std", pa.float32()),
 ]
 
 settings_pa = [

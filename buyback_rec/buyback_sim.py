@@ -11,6 +11,7 @@ from pathlib import Path
 import warnings
 from dtypes import SCHEMA_BUYBACK, SCHEMA_OVERVIEW, SCHEMA_SETTINGS
 from uuid import uuid4
+import scipy
 
 plt.style.use("dark_background")
 
@@ -259,20 +260,30 @@ def decode_metadata(metadata):
 def get_price_statistics(data: pd.DataFrame):
     price_data = data[["open", "close", "high", "low"]]
     row_price_means = price_data.values.mean(axis=1)
-    price_mean = row_price_means.mean()
 
-    dates = data["start_time"]
-    net_days = np.array([(date - dates[0]).total_seconds() / 86400 for date in dates])
-    avg_step = (net_days[1:] - net_days[:-1]).mean()
-    # TODO Correct and generate these values
-    price_slope = price_mean / avg_step
-    price_slope_ppd = price_mean / avg_step
-    # price_slope_ppd = np.polyfit(data["start_times"].values, price_data, 1)[
-    #     0
-    # ]  # in % per day
-    price_std = price_data.values.flatten().std()
+    date_deltas = (
+        data["start_time"] - data["start_time"][0]
+    )  # TODO: is resolution always milliseconds?
+    stacked_dates = np.tile(date_deltas.astype("int64"), 4)
+    stacked_prices = price_data.values.flatten()
+    price_std = stacked_prices.std()
+    price_mean = stacked_prices.mean()
+    stacked_prices_perc = (stacked_prices - stacked_prices[0]) / stacked_prices[0]
+    price_rel_std = stacked_prices_perc.std()
+
+    regression = scipy.stats.linregress(stacked_dates, stacked_prices)
+    price_slope = regression.slope * 1e3 * 86400  # milliseconds to days
+    regression_perc = scipy.stats.linregress(stacked_dates, stacked_prices_perc)
+    price_slope_ppd = regression_perc.slope * 1e3 * 86400 * 100  # in % per day
     final_over_start_price = data["close"].values[-1] - data["open"].values[0]
-    return price_mean, price_slope, price_slope_ppd, final_over_start_price, price_std
+    return (
+        price_mean,
+        price_slope,
+        price_slope_ppd,
+        final_over_start_price,
+        price_std,
+        price_rel_std,
+    )
 
 
 def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch:
@@ -297,15 +308,21 @@ def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch
     end_n_buybacks = []
     end_n_refresh = []
 
-    price_mean, price_slope, price_slope_ppd, final_over_start_price, price_std = (
-        get_price_statistics(data)
-    )
+    (
+        price_mean,
+        price_slope,
+        price_slope_ppd,
+        final_over_start_price,
+        price_std,
+        price_rel_std,
+    ) = get_price_statistics(data)
 
     price_means = []
     price_slopes = []
     price_slopes_ppd = []
     final_over_start_prices = []
     price_stds = []
+    price_rel_stds = []
     # don't do `for (ident, ratio), subtable in result.groupby(["identifier", "ratio"]):` because we want metadata from the orders that didn't execute too
     for ident in identifiers:  # group metadata for each backtest run
         for r_idx, ratio in enumerate(ratios):
@@ -328,6 +345,7 @@ def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch
                 end_discount_running_return.append(None)
                 end_n_discount_buybacks.append(None)
                 end_n_discount_refresh.append(None)
+
             else:
                 subtable["trigger_delay"] = (
                     subtable["trigger_time"] - subtable["start_time"]
@@ -354,15 +372,16 @@ def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch
                     subtable["num_discount_refresh"].values[-1]
                 )
 
-                # add price statistics
-                price_means.append(price_mean)
-                price_slopes.append(price_slope)
-                price_slopes_ppd.append(price_slope_ppd)
-                final_over_start_prices.append(final_over_start_price)
-                price_stds.append(price_std)
-
             end_n_buybacks.append(result["num_buybacks"].max())
             end_n_refresh.append(result["num_refresh"].max())
+
+            # add price statistics
+            price_means.append(price_mean)
+            price_slopes.append(price_slope)
+            price_slopes_ppd.append(price_slope_ppd)
+            final_over_start_prices.append(final_over_start_price)
+            price_stds.append(price_std)
+            price_rel_stds.append(price_rel_std)
 
     overview = {
         "identifier": id_list,
@@ -371,13 +390,19 @@ def buyback_overview(result: pd.DataFrame, data: pd.DataFrame) -> pa.RecordBatch
         "delay_min": delay_min,
         "delay_max": delay_max,
         "delay_mean": delay_mean,
-        "end_running_return": end_running_return,
-        "end_discount_running_return": end_discount_running_return,
-        "running_return_mean": running_return_mean,
         "end_num_discount_buybacks": end_n_discount_buybacks,
         "end_num_discount_refresh": end_n_discount_refresh,
         "end_num_buybacks": end_n_buybacks,
         "end_num_refresh": end_n_refresh,
+        "end_running_return": end_running_return,
+        "end_discount_running_return": end_discount_running_return,
+        "running_return_mean": running_return_mean,
+        "price_mean": price_means,
+        "price_slope": price_slopes,
+        "price_slope_ppd": price_slopes_ppd,
+        "final_over_start_price": final_over_start_prices,
+        "price_std": price_stds,
+        "price_rel_std": price_rel_stds,
     }
     return pa.record_batch(overview, schema=SCHEMA_OVERVIEW)
 
