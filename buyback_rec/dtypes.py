@@ -1,6 +1,6 @@
 import pyarrow as pa
 
-candle_pa = [
+candle = [
     ("asset1", pa.string()),
     ("asset2", pa.string()),
     ("start_time", pa.timestamp("s")),
@@ -12,7 +12,7 @@ candle_pa = [
 ]
 
 
-buyback_pa = [
+buyback = [
     ("identifier", pa.string()),
     ("start_time", pa.timestamp("s")),
     ("last_reset_time", pa.timestamp("s")),
@@ -35,7 +35,7 @@ buyback_pa = [
     ("num_refresh", pa.int32()),
 ]
 
-overview_pa = [
+overview = [
     ("identifier", pa.string()),
     ("ratio", pa.float32()),
     ("discount", pa.float32()),
@@ -57,7 +57,7 @@ overview_pa = [
     ("price_rel_std", pa.float32()),
 ]
 
-settings_pa = [
+settings = [
     ("identifier", pa.string()),
     ("ratios", pa.list_(pa.float32())),
     ("discounts", pa.list_(pa.float32())),
@@ -72,10 +72,10 @@ settings_pa = [
 ]
 
 
-SCHEMA_CANDLE = pa.schema(candle_pa)
-SCHEMA_BUYBACK = pa.schema(buyback_pa)
-SCHEMA_OVERVIEW = pa.schema(overview_pa)
-SCHEMA_SETTINGS = pa.schema(settings_pa)
+SCHEMA_CANDLE = pa.schema(candle)
+SCHEMA_BUYBACK = pa.schema(buyback)
+SCHEMA_OVERVIEW = pa.schema(overview)
+SCHEMA_SETTINGS = pa.schema(settings)
 
 if __name__ == "__main__":
     print(SCHEMA_BUYBACK)
